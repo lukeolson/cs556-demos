@@ -101,3 +101,4 @@ def set_figure(fontsize=18, width=550.0, heightratio=None, height=None):
     display(HTML("<style>.container { width:80% !important; }</style>"))
     from IPython.display import set_matplotlib_formats
     set_matplotlib_formats('retina')
+set_figure(width=500)
