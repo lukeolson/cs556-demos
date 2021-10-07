@@ -271,15 +271,15 @@ def gmres_mgs(A, b, x0=None, tol=1e-5, restrt=None, maxiter=None,
             change = max(abs(update[indices] / x[indices]))
             if change < 1e-12:
                 # No change, halt
-                return (x, -1)
+                return (x, -1, H)
 
         # test for convergence
         if normr < tol:
-            return (x, 0)
+            return (x, 0, H)
 
     # end outer loop
 
-    return (x, niter)
+    return (x, niter, H)
 
 if __name__ == '__main__':
     import scipy.sparse as sparse
