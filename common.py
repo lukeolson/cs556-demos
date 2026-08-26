@@ -37,8 +37,7 @@ def set_figure(fontsize=18, width=550.0, heightratio=None, height=None):
     else:
         fig_height = height*inches_per_pt
     fig_size = [fig_width, fig_height]
-    params = {'backend': 'pdf',
-              'text.usetex': True,
+    params = {'text.usetex': True,
               'text.latex.preamble': r"""
                                       \usepackage{amsmath}
                                       """,
@@ -54,6 +53,7 @@ def set_figure(fontsize=18, width=550.0, heightratio=None, height=None):
               'ytick.labelsize': fontsize,
               # figure size
               'figure.figsize': fig_size,
+              'figure.dpi': 600,
               'figure.constrained_layout.use': True,
               # line styling
               'lines.linewidth': 2,
@@ -97,8 +97,8 @@ def set_figure(fontsize=18, width=550.0, heightratio=None, height=None):
               'axes.linewidth': 0.6,
               }
     matplotlib.rcParams.update(params)
-    from IPython.core.display import display, HTML
-    display(HTML("<style>.container { width:80% !important; }</style>"))
-    from IPython.display import set_matplotlib_formats
-    set_matplotlib_formats('retina')
+    #from IPython.core.display import display, HTML
+    #display(HTML("<style>.container { width:80% !important; }</style>"))
+    #from IPython.display import set_matplotlib_formats
+    #set_matplotlib_formats('retina')
 set_figure(width=500)
