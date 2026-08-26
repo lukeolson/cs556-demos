@@ -5,20 +5,20 @@
  __kernel void
 spmv_csr_vector(__global const int * Ap,
                 __global const int * Aj,
-                __global const double * Ax,
-                __global const double * x,
-                __global double * y,
+                __global const real_t * Ax,
+                __global const real_t * x,
+                __global real_t * y,
                 const unsigned int n_row)
 {
     int wid = get_local_id(0); 
     int wgsize = get_local_size(0);
     int i = get_group_id(0);
 
-    __local volatile double wgsum[128];
+    __local volatile real_t wgsum[128];
     wgsum[wid] = 0;
     
     if (i < n_row ) {
-        double sum=0;
+        real_t sum=0;
         for (int jj = Ap[i] + wid; jj < Ap[i+1]; jj+=wgsize)
         {
             sum += Ax[jj] * x[Aj[jj]];

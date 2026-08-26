@@ -6,63 +6,60 @@ from time import time
 
 ntests = 10   # how many timing tests to run?
 
+precision, cl_type = np.float32, 'float'
+#precision, cl_type = np.float64, 'double'
+
 # load a matrix
 data = pyamg.gallery.load_example('unit_square')
-A = data['A'].tocsr()
+A = data['A'].tocsr().astype(precision)
 n_row, n_col = A.shape
-x = np.random.rand(n_col)
-y = np.zeros(n_row)
-c = np.array([1.0])
+x = np.random.rand(n_col).astype(precision)
+y = np.zeros(n_row, dtype=precision)
 
 ctx = cl.create_some_context()
 queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
 
-c_dev = cl.array.to_device(queue, c)
+if precision == np.float64:
+    for dev in ctx.devices:
+        if dev.double_fp_config == 0:
+            raise RuntimeError(f'device does not support double precision')
+
 x_dev = cl.array.to_device(queue, x)
 y_dev = cl.array.to_device(queue, y)
 Ap_dev = cl.array.to_device(queue, A.indptr)
 Aj_dev = cl.array.to_device(queue, A.indices)
 Ax_dev = cl.array.to_device(queue, A.data)
 
-prg = cl.Program(ctx, """
-// y = A * x
-// A = Ap (row pointer)
-//     Aj (col indices)
-//     Ax (data)
- __kernel void
-spmv_csr_scalar(__global const int * Ap,
-                __global const int * Aj,
-                __global const double * Ax,
-                __global const double * x,
-                __global double * y,
-                const unsigned int n_row)
-{
-    int i = get_global_id(0);
+kernel_file = 'spmv_csr_scalar.cl'
 
-    double sum=0;
-    for (int jj = Ap[i]; jj < Ap[i+1]; jj++)
-    {
-        sum += Ax[jj] * x[Aj[jj]];
-    }
-    y[i] = sum;
-}
-"""
-        ).build()
+# define the precision as real_t in the .cl kernels
+header = """
+#if defined(cl_khr_fp64)
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+#endif
+typedef %s real_t;
+""" % cl_type
+
+with open(kernel_file) as f:
+    prg = cl.Program(ctx, header + f.read()).build()
+
+knl = cl.Kernel(prg, kernel_file.replace('.cl', ''))
 
 times = []
 for k in range(ntests+3): # warmup = 3
-    knl = prg.spmv_csr_scalar(queue, y.shape, None,
-                              Ap_dev.data, Aj_dev.data, Ax_dev.data,
-                              x_dev.data, y_dev.data,
-                              np.int32(n_row))
-    knl.wait()
-    time_knl = 1e-9 * (knl.profile.end - knl.profile.start)
+    evt = knl(queue, y.shape, None,
+              Ap_dev.data, Aj_dev.data, Ax_dev.data,
+              x_dev.data, y_dev.data,
+              np.int32(n_row))
+    evt.wait()
+    time_knl = 1e-9 * (evt.profile.end - evt.profile.start)
     if k >= 3:
         # let the GPU warm up 3x
-        i = k-3
         times.append(time_knl)
 y_dev.get(ary=y)
 
+print("precision:   ", cl_type)
 print("mean time:   ", np.mean(times))
-print("mean gflops: ", A.nnz/1e9 / np.mean(times))
+# 2 flops per nonzero: one multiply and one add
+print("mean gflops: ", 2 * A.nnz/1e9 / np.mean(times))
 print("check: ", np.linalg.norm(A @ x - y))
