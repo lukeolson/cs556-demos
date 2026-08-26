@@ -14,7 +14,7 @@ spmv_csr_vector(__global const int * Ap,
     int wgsize = get_local_size(0);
     int i = get_group_id(0);
 
-    __local volatile real_t wgsum[128];
+    __local volatile real_t wgsum[WGSIZE];
     wgsum[wid] = 0;
     
     if (i < n_row ) {
