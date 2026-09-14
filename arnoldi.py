@@ -12,13 +12,23 @@ def arnoldi(A, k, v0=None, reorthog=False):
     ----------
     A : sparse matrix
         n x n, linear system to orthogonalize
-    x0 : {array, matrix}
-        initial guess, default is a random vector
+    k : int
+        number of Arnoldi steps (size of the Krylov basis)
+    v0 : array
+        starting vector, default is a random vector
+    reorthog : bool
+        if True, perform a second Gram-Schmidt pass each step
+
+    Returns
+    -------
+    V, H : n x m and m x m arrays, where m = k unless the iteration
+        breaks down (invariant subspace found), in which case m < k
     """
 
     A = la.aslinearoperator(A)
 
     n = A.shape[0]
+    k = min(k, n)  # at most n orthonormal vectors in R^n
     if v0 is None:
         v = numpy.random.rand(n,)
     else:
@@ -31,6 +41,7 @@ def arnoldi(A, k, v0=None, reorthog=False):
 
     for j in range(0, k):
         w = A * V[:, j]
+        normAv = norm(w)
         for i in range(0, j + 1):
             H[i, j] = numpy.dot(w, V[:, i])
             w -= H[i, j] * V[:, i]
@@ -41,8 +52,11 @@ def arnoldi(A, k, v0=None, reorthog=False):
             w -= V[:, :(j + 1)].dot(d)
             H[:(j + 1), j] += d
 
-        newh = norm(w)
         if j < (k - 1):
+            newh = norm(w)
+            if newh <= 1e-10 * normAv:
+                # breakdown: the Krylov space is invariant under A
+                return (V[:, :(j + 1)], H[:(j + 1), :(j + 1)])
             H[j + 1, j] = newh
             V[:, j + 1] = (1 / newh) * w
 

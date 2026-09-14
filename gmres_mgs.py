@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.linalg import norm
 import scipy.sparse.linalg as sla
+from scipy.linalg import solve_triangular
 from warnings import warn
 
 
@@ -30,7 +31,7 @@ def apply_givens(Q, v, k):
 
     for j in range(k):
         Qloc = Q[j]
-        v[j:j+2] = np.dot(Qloc, v[j:j+2])
+        v[j:j+2] = Qloc @ v[j:j+2]
 
 
 def gmres_mgs(A, b, x0=None, tol=1e-5, restrt=None, maxiter=None,
@@ -82,8 +83,7 @@ def gmres_mgs(A, b, x0=None, tol=1e-5, restrt=None, maxiter=None,
     -----
         - The LinearOperator class is in scipy.sparse.linalg.interface.
           Use this class if you prefer to define A or M as a mat-vec routine
-          as opposed to explicitly constructing the matrix.  A.psolve(..) is
-          still supported as a legacy.
+          as opposed to explicitly constructing the matrix.
         - For robustness, modified Gram-Schmidt is used to orthogonalize
           the Krylov Space.
           Givens Rotations are used to provide the residual norm
@@ -100,14 +100,15 @@ def gmres_mgs(A, b, x0=None, tol=1e-5, restrt=None, maxiter=None,
 
     A = sla.aslinearoperator(A)
 
-    x = x0.copy()
     dimen = A.shape[0]
+    b = np.asarray(b).ravel()
+    if x0 is None:
+        x0 = np.zeros(dimen)
+    x0 = np.asarray(x0).ravel()
+    x = x0.astype(np.result_type(A.dtype, b.dtype, x0.dtype))
 
     # Should norm(r) be kept
-    if residuals == []:
-        keep_r = True
-    else:
-        keep_r = False
+    keep_r = residuals is not None
 
     # Set number of outer and inner iterations
     if restrt:
@@ -142,11 +143,11 @@ def gmres_mgs(A, b, x0=None, tol=1e-5, restrt=None, maxiter=None,
 
     # Is this a one dimensional matrix?
     if dimen == 1:
-        entry = np.ravel(A*np.array([1.0]))
+        entry = A @ np.array([1.0])
         return (b/entry, 0)
 
     # Prep for method
-    r = b - np.ravel(A*x)
+    r = b - A @ x
     normr = norm(r)
     if keep_r:
         residuals.append(normr)
@@ -154,8 +155,6 @@ def gmres_mgs(A, b, x0=None, tol=1e-5, restrt=None, maxiter=None,
     # Is initial guess sufficient?
     if normr <= tol:
         return (x, 0)
-
-    normr = norm(r)
 
     # Use separate variable to track iterations.  If convergence fails, we
     # cannot simply report niter = (outer-1)*max_outer + inner.  Numerical
@@ -179,20 +178,21 @@ def gmres_mgs(A, b, x0=None, tol=1e-5, restrt=None, maxiter=None,
         vs.append(V[0, :])
 
         # This is the RHS vector for the problem in the Krylov Space
-        g = np.zeros((dimen,))
+        g = np.zeros((max_inner+1,), dtype=H.dtype)
         g[0] = normr
 
         for inner in range(max_inner):
+            niter += 1
 
             # New Search Direction
             v = V[inner+1, :]
-            v[:] = np.ravel(A*vs[-1])
+            v[:] = A @ vs[-1]
             vs.append(v)
 
             #  Modified Gram Schmidt
             for k in range(inner+1):
                 vk = vs[k]
-                alpha = np.dot(vk, v)
+                alpha = np.vdot(vk, v)
                 H[inner, k] = alpha
                 v += -alpha*vk
 
@@ -216,7 +216,9 @@ def gmres_mgs(A, b, x0=None, tol=1e-5, restrt=None, maxiter=None,
                     h2 = H[inner, inner+1]
                     h1_mag = abs(h1)
                     h2_mag = abs(h2)
-                    if h1_mag < h2_mag:
+                    if h1_mag == 0:
+                        tau = 1.0
+                    elif h1_mag < h2_mag:
                         mu = h1/h2
                         tau = np.conjugate(mu)/abs(mu)
                     else:
@@ -231,12 +233,15 @@ def gmres_mgs(A, b, x0=None, tol=1e-5, restrt=None, maxiter=None,
 
                     # Apply Given's Rotation to g,
                     #   the RHS for the linear system in the Krylov Subspace.
-                    g[inner:inner+2] = np.dot(Qblock, g[inner:inner+2])
+                    g[inner:inner+2] = Qblock @ g[inner:inner+2]
 
                     # Apply effect of Given's Rotation to H
-                    H[inner, inner] = \
-                        np.dot(Qblock[0, :], H[inner, inner:inner+2])
+                    H[inner, inner] = Qblock[0, :] @ H[inner, inner:inner+2]
                     H[inner, inner+1] = 0.0
+
+            # Breakdown: Krylov space is invariant, so the solution is exact
+            if normv == 0.0:
+                break
 
             # Don't update normr if last inner iteration, because
             # normr is calculated directly after this loop ends.
@@ -249,15 +254,15 @@ def gmres_mgs(A, b, x0=None, tol=1e-5, restrt=None, maxiter=None,
                 if keep_r:
                     residuals.append(normr)
 
-            niter += 1
-
         # end inner loop, back to outer loop
 
         # Find best update to x in Krylov Space, V.  Solve inner x inner system
-        y = sla.spsolve(H[0:inner+1, 0:inner+1].T, g[0:inner+1])
-        update = np.ravel(np.mat(V[:inner+1, :]).T*y.reshape(-1, 1))
+        # H is stored transposed, so H.T is upper triangular
+        y = solve_triangular(H[0:inner+1, 0:inner+1].T, g[0:inner+1],
+                             lower=False)
+        update = V[:inner+1, :].T @ y
         x = x + update
-        r = b - np.ravel(A*x)
+        r = b - A @ x
 
         normr = norm(r)
 
@@ -271,22 +276,21 @@ def gmres_mgs(A, b, x0=None, tol=1e-5, restrt=None, maxiter=None,
             change = max(abs(update[indices] / x[indices]))
             if change < 1e-12:
                 # No change, halt
-                return (x, -1, H)
+                return (x, -1)
 
         # test for convergence
         if normr < tol:
-            return (x, 0, H)
+            return (x, 0)
 
     # end outer loop
 
-    return (x, niter, H)
+    return (x, niter)
 
 if __name__ == '__main__':
     import scipy.sparse as sparse
 
     n = 10
     d = np.arange(1, n+1, dtype=float)
-    d[0] = 1.0
     A = sparse.spdiags(d, [0], n, n).tocsr()
 
     b = np.zeros((n,))
@@ -294,12 +298,14 @@ if __name__ == '__main__':
 
     res = []
     (x, flag) = gmres_mgs(A, b, x0, tol=1e-8, maxiter=n-2, residuals=res)
-    res = np.array(res)
+    res = np.asarray(res)
 
     import matplotlib.pyplot as plt
-    plt.interactive(True)
     plt.figure()
     plt.semilogy(res, label='residuals')
+    plt.legend()
 
     plt.figure()
     plt.semilogy(res[1:]/res[:-1], label='residual factors')
+    plt.legend()
+    plt.show()
