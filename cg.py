@@ -1,6 +1,6 @@
 import numpy as np
-from scipy.sparse.linalg.isolve.utils import make_system
-from pyamg.util.linalg import norm
+from scipy.sparse.linalg import aslinearoperator
+from numpy.linalg import norm
 
 
 def cg(A, b, x0=None, tol=1e-5, maxiter=None,
@@ -31,7 +31,13 @@ def cg(A, b, x0=None, tol=1e-5, maxiter=None,
         list of x.T A X
 
     '''
-    A, M, x, b, postprocess = make_system(A, None, x0, b)
+    A = aslinearoperator(A)
+    b = np.asarray(b).ravel()
+    dtype = np.result_type(A.dtype, b.dtype, float)
+    if x0 is None:
+        x = np.zeros(b.shape, dtype=dtype)
+    else:
+        x = np.array(x0, dtype=dtype).ravel()
 
     # Determine maxiter
     if maxiter is None:
@@ -57,7 +63,7 @@ def cg(A, b, x0=None, tol=1e-5, maxiter=None,
         errs[:] = [np.sqrt(np.dot(A*x, x))]
 
     if normr < tol:
-        return (postprocess(x), 0)
+        return (x, 0)
 
     iter = 0
 
@@ -88,16 +94,17 @@ def cg(A, b, x0=None, tol=1e-5, maxiter=None,
             callback(x)
 
         if normr < tol:
-            return (postprocess(x), 0)
+            return (x, 0)
 
         if iter == maxiter:
-            return (postprocess(x), iter)
+            return (x, iter)
 
 if __name__ == '__main__':
-    from pyamg.gallery import poisson
-    A = poisson((10, 10))
+    import scipy.sparse as sparse
+    T = sparse.diags([-1.0, 2.0, -1.0], [-1, 0, 1], shape=(10, 10))
+    A = sparse.kronsum(T, T).tocsr()  # 2D Poisson, 5-point stencil
     b = np.ones((A.shape[0],))
     res = []
     (x, flag) = cg(A, b, maxiter=8, tol=1e-8, residuals=res)
-    print(np.linalg.norm(b - A*x))
+    print(np.linalg.norm(b - A @ x))
     print(res)
