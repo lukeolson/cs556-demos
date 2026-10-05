@@ -39,13 +39,13 @@ def onedprojection(A, b, x0=None, tol=1e-15, maxiter=None,
     else:
         x = x0.copy()
 
-    r = b - A*x
+    r = b - A@x
 
     normr = np.linalg.norm(r)
     if residuals is not None:
         residuals[:] = [normr]  # initial residual
     if errs is not None:
-        errs[:] = [np.sqrt(np.dot(A*x, x))]
+        errs[:] = [np.sqrt(np.dot(A@x, x))]
     if normr < tol:
         return (x, 0)
 
@@ -54,16 +54,16 @@ def onedprojection(A, b, x0=None, tol=1e-15, maxiter=None,
         if method == 'SD':
             v = r
             w = r
-            Av = A*r
+            Av = A@r
             alpha = np.inner(r, w)/np.inner(Av, w)
         elif method == 'MR':
             v = r
-            w = A*r
+            w = A@r
             Av = w
             alpha = np.inner(r, w)/np.inner(Av, w)
         elif method == 'RNSD':
-            v = A.T * r
-            w = A*v
+            v = A.T @ r
+            w = A@v
             Av = w
             alpha = np.inner(v, v)/np.inner(Av, Av)
 
@@ -78,6 +78,6 @@ def onedprojection(A, b, x0=None, tol=1e-15, maxiter=None,
         if residuals is not None:
             residuals.append(normr) # / (np.linalg.norm(A.data) * np.linalg.norm(x)))
         if errs is not None:
-            errs.append(np.sqrt(np.dot(A*x, x)))
+            errs.append(np.sqrt(np.dot(A@x, x)))
         if normr < tol or it == maxiter:
             return (x, it)

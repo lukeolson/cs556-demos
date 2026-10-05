@@ -1,23 +1,24 @@
 import numpy as np
 
 
-def fom(A, b, x0=None, maxiter=None, residuals=None, errs=None):
+def fom(A, b, x0=None, maxiter=None, residuals=None, errs=None,
+        ritz=None):
     """Full orthogonalization method
 
     Parameters
     ----------
     A : {array, matrix, sparse matrix, LinearOperator}
-        n x n, linear system to solve
+        n x n, linear system to solve.
     b : {array, matrix}
-        right hand side, shape is (n,) or (n,1)
+        Right-hand side, shape is (n,) or (n,1).
     x0 : {array, matrix}
-        initial guess, default is a vector of zeros
+        Initial guess, default is a vector of zeros.
     maxiter : int
-        maximum number of allowed iterations
+        Maximum number of allowed iterations.
     residuals : list
         residuals has the residual norm history,
         including the initial residual, appended to it
-    errs : list of errors returned through (Ax,x), so test the errors on Ax=0
+    errs : list of errors returned through (Ax, x), so test the errors on Ax=0
     """
     n = len(b)
     if maxiter is None:
@@ -27,21 +28,23 @@ def fom(A, b, x0=None, maxiter=None, residuals=None, errs=None):
     else:
         x = x0.copy()
 
-    r = b - A * x
+    r = b - A @ x
     beta = np.linalg.norm(r)
 
     if residuals is not None:
         residuals[:] = [beta]  # initial residual
     if errs is not None:
-        errs[:] = [np.sqrt(np.dot(A * x, x))]
+        errs[:] = [np.sqrt(np.dot(A @ x, x))]
 
     V = np.zeros((n, maxiter))
     H = np.zeros((maxiter, maxiter))
     V[:, 0] = (1 / beta) * r
 
-    for j in range(0, maxiter):
-        w = A * V[:, j]
-        for i in range(0, j + 1):
+    iters = 0
+    newh = 0
+    for j in range(maxiter):
+        w = A @ V[:, j]
+        for i in range(j + 1):
             H[i, j] = np.dot(w, V[:, i])
             w += -H[i, j] * V[:, i]
         newh = np.linalg.norm(w)
@@ -66,12 +69,15 @@ def fom(A, b, x0=None, maxiter=None, residuals=None, errs=None):
             y = np.linalg.solve(H[0:j + 1, 0:j + 1], e1)
             z = np.dot(V[:, 0:j + 1], y)
             x = x0 + z.ravel()
-            errs.append(np.sqrt(np.dot(A * x, x)))
+            errs.append(np.sqrt(np.dot(A @ x, x)))
+        if ritz is not None:
+            ritz.append(np.linalg.eigvals(H[:(j+1), :(j+1)]))
+        iters = j
 
-    e1 = np.zeros((j + 1, 1))
+    e1 = np.zeros((iters + 1, 1))
     e1[0] = beta
-    y = np.linalg.solve(H[0:j + 1, 0:j + 1], e1)
-    z = np.dot(V[:, 0:j + 1], y)
+    y = np.linalg.solve(H[0:iters + 1, 0:iters + 1], e1)
+    z = np.dot(V[:, 0:iters + 1], y)
     x = x0 + z.ravel()
 
     return (x, newh)
@@ -106,7 +112,6 @@ if __name__ == "__main__":
 
     plt.figure()
     plt.semilogy(res, label='SD residuals')
-    plt.hold(True)
     plt.semilogy(err, label='SD errors')
     plt.semilogy(res2, label='FOM residuals')
     plt.semilogy(err2, label='FOM errors')
